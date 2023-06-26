@@ -10,7 +10,7 @@ The ABC-SMC Algorithm
 """
 
 def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
-           eps0, eps_percentile, min_eps, eps_sched=None, 
+           eps0=1, eps_percentile=0.15, min_eps=0, eps_sched=None, 
            kernel_method='uniform', **kwargs):
     """
     Implements the ABC-SMC algorithm.
@@ -34,12 +34,17 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
     #~~~~~ Process kwargs ~~~~~#
     track_all_perturbations = kwargs.get('track_all_perturbations', False)
     track_limit = kwargs.get('track_limit', 1000)
+    verbosity = kwargs.get('verbosity', 1)
+    disable_pbars = kwargs.get('disable_pbars', False)
     #~~~~~~~~~~~~~~~~~~~~~~~~~~#
     
     # Termination Signal Handler
     def terminate_signal(signalnum, handler):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, terminate_signal)
+
+    if eps_sched:
+        niters = len(eps_sched)
         
     particle_history = np.zeros([niters, nparticles, nparams])
     weight_history = np.zeros([niters, nparticles])
@@ -88,8 +93,9 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
         }
     
     try:
-        print("Running ABC-SMC...")
-        iterpbar = trange(niters, desc="Iteration")
+        if verbosity:
+            print("Running ABC-SMC...")
+        iterpbar = trange(niters, desc="Iteration", disable=disable_pbars)
         for iteridx in iterpbar:
             itertime0 = time.time()
             
@@ -167,12 +173,14 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
             
             if iteridx == 0:
                 pbar = tqdm(total=nparticles, 
-                            desc=f"Current count [Iter {iteridx}]")
+                            desc=f"Current count [Iter {iteridx}]",
+                            disable=disable_pbars)
             else:
                 pbar.set_description(f"Current count [Iter {iteridx}]")
                 pbar.reset()
 
-            print(f"Epsilon: {eps:.4g}")
+            if verbosity:
+                print(f"Epsilon: {eps:.4g}")
             
             count = 0
             tries = 0
@@ -230,7 +238,8 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
                     prior_list, kernel
                 )
             tic1 = time.time()
-            print(f"Iter {iteridx} finished in {tic1 - itertime0:.3g} secs")
+            if verbosity:
+                print(f"Iter {iteridx} finished in {tic1 - itertime0:.3g} secs")
             pbar.refresh()
             acceptance_rates[iteridx] = count / tries
             
@@ -270,7 +279,8 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
             errm += f"\nReturning previous state (iteration {iteridx-1})."
         else:
             errm += "\nReturning (None, None)."
-        print(errm)
+        if verbosity:
+            print(errm)
         pbar.close()
         iterpbar.close()
         # Return results of last completed iteration
