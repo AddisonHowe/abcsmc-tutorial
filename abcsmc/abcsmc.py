@@ -31,6 +31,11 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
         tuple ()
     """
     
+    #~~~~~ Process kwargs ~~~~~#
+    track_all_perturbations = kwargs.get('track_all_perturbations', False)
+    track_limit = kwargs.get('track_limit', 1000)
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~#
+    
     # Termination Signal Handler
     def terminate_signal(signalnum, handler):
         raise KeyboardInterrupt
@@ -42,6 +47,18 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
     acceptance_rates = np.zeros(niters)
     epsilon_history = []
     
+    sampling_index_history = np.zeros([niters, nparticles], dtype=int)
+    particle_index_history = np.zeros([niters, nparticles], dtype=int)
+    
+    all_particle_history = None
+    all_sampling_index_history = None
+    all_particle_acceptance_history = None
+    if track_all_perturbations:
+        all_particle_history = [[] for _ in range(niters)]
+        all_sampling_index_history = [[] for _ in range(niters)]
+        all_particle_acceptance_history = [[] for _ in range(niters)]
+
+    
     prev_particles = np.empty([nparticles, nparams])
     prev_scores = np.empty(nparticles)
     prev_particles[:] = np.nan
@@ -49,9 +66,11 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
 
     kept_particles = np.empty([nparticles, nparams])
     kept_scores = np.empty(nparticles)
-    sampidxs = -np.ones(nparticles, dtype=int)
+    sampling_idxs = np.empty(nparticles, dtype=int)
+    particle_idxs = np.empty(nparticles, dtype=int)
+    prev_part_idxs = np.empty(nparticles, dtype=int)
 
-    weights = np.ones(nparticles) / nparticles
+    # weights = np.ones(nparticles) / nparticles
 
     def compile_results(iteridx=niters):
         return {
@@ -60,7 +79,12 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
             'score_history': score_history[0:iteridx],
             'acceptance_rates': acceptance_rates[0:iteridx],
             'epsilon_history': epsilon_history[0:iteridx],
-            'niters': iteridx
+            'sampling_index_history': sampling_index_history[0:iteridx],
+            'particle_index_history': particle_index_history[0:iteridx],
+            'niters': iteridx,
+            'all_sampling_index_history': all_sampling_index_history,
+            'all_particle_history': all_particle_history,
+            'all_particle_acceptance_history': all_particle_acceptance_history,
         }
     
     try:
@@ -137,15 +161,6 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
             else:
                 raise RuntimeError(f"Unknown kernel method `{kernel_method}`")
             
-            if iteridx > 0:
-                print(kernel)
-
-            # Compute local covariances for perturbation
-            if iteridx > 0:
-                tic0 = time.time()
-                # locms = ...
-                tic1 = time.time()
-            
             # Reset arrays tracking kept particles
             kept_particles[:] = np.nan
             kept_scores[:] = np.nan
@@ -161,6 +176,7 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
             
             count = 0
             tries = 0
+            num_tracked = 0  # for tracking all particles perturbed
             while count < nparticles:
                 if iteridx == 0:
                     # Sample particle from prior
@@ -185,32 +201,60 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
                 if score <= eps:
                     kept_particles[count] = particle
                     kept_scores[count] = score
-                    if iteridx > 0:
-                        sampidxs[count] = idx
+                    if iteridx == 0:
+                        sampling_idxs[count] = -1
+                        particle_idxs[count] = count
+                    else:
+                        sampling_idxs[count] = idx
+                        particle_idxs[count] = prev_part_idxs[idx]
                     count += 1
                     pbar.update(1)
+                
+                if track_all_perturbations and num_tracked < track_limit:
+                    all_particle_history[iteridx].append(particle)
+                    if iteridx == 0:
+                        all_sampling_index_history[iteridx].append(-1)
+                    else:
+                        all_sampling_index_history[iteridx].append(idx)
+                    all_particle_acceptance_history[iteridx].append(
+                        score <= eps)
+                    num_tracked += 1
+
                 tries += 1
                 tic1 = time.time()
             if iteridx == 0:
                 weights = np.ones(nparticles) / nparticles
             else:
                 weights = compute_weights(
-                    kept_particles, sampidxs, prev_particles, weights, 
+                    kept_particles, sampling_idxs, prev_particles, weights, 
                     prior_list, kernel
                 )
             tic1 = time.time()
             print(f"Iter {iteridx} finished in {tic1 - itertime0:.3g} secs")
             pbar.refresh()
-
             acceptance_rates[iteridx] = count / tries
             
-            prev_particles = kept_particles.copy()
-            prev_scores = kept_scores.copy()
+            prev_particles[:] = kept_particles
+            prev_scores[:] = kept_scores
+            prev_part_idxs[:] = particle_idxs
 
-            particle_history[iteridx] = prev_particles
-            score_history[iteridx] = prev_scores
+            particle_history[iteridx] = kept_particles
+            score_history[iteridx] = kept_scores
             weight_history[iteridx] = weights
-                    
+            sampling_index_history[iteridx] = sampling_idxs
+            particle_index_history[iteridx] = particle_idxs
+            
+            if track_all_perturbations:
+                all_sampling_index_history[iteridx] = np.array(
+                    all_sampling_index_history[iteridx], dtype=int
+                )
+                all_particle_history[iteridx] = np.array(
+                    all_particle_history[iteridx]
+                )
+                all_particle_acceptance_history[iteridx] = np.array(
+                    all_particle_acceptance_history[iteridx], dtype=bool
+                )
+
         results = compile_results(iteridx=iteridx+1)
         pbar.close()
         iterpbar.close()
@@ -250,15 +294,15 @@ def sample_from_priors(prior_list, n=None):
 
 def sample_from_distribution(particles, weights):
     sampidx = np.random.choice(len(particles), p=weights)    
-    return particles[sampidx].copy(), sampidx
+    return particles[sampidx], sampidx
 
-def compute_weights(particles, sampidxs, prev_particles, prev_weights, 
+def compute_weights(particles, sampling_idxs, prev_particles, prev_weights, 
                     prior_list, kernel):
     new_weights = np.zeros(prev_weights.shape)
     for i in range(len(particles)):
         denom = np.sum(
             prev_weights * kernel.vpdf(
-                prev_particles, particles[i], sampidxs[i]
+                prev_particles, particles[i], sampling_idxs[i]
             )
         )
         new_weights[i] = eval_prior_prob(particles[i], prior_list) / denom
