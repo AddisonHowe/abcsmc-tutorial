@@ -21,9 +21,10 @@ class Model(ABC):
 
 class GaussianModel(Model):
 
-    def __init__(self, mu, sigma):
+    def __init__(self, mu, var):
         self.mu = mu
-        self.sigma = sigma
+        self.var = var
+        self.sigma = np.sqrt(var)
     
     def generate_data(self, n):
         return self.mu + self.sigma * np.random.randn(n)
