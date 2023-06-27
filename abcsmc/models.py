@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.stats as st
 from abc import ABC, abstractmethod
 
 """
@@ -40,3 +41,15 @@ class RingModel(Model):
     def generate_data(self, n):
         return self.mu + self.sigma * np.random.randn(n)
 
+
+class BananaModel(Model):
+    
+    def  __init__(self, theta1, theta2, cov=[[1, 0],[0, 0.5]]):
+        self.theta1 = theta1
+        self.theta2 = theta2
+        self.cov = np.array(cov)
+        self.mu = np.array([theta1, theta1 + theta2*theta2])
+        self.mvn = st.multivariate_normal(self.mu, self.cov)
+
+    def generate_data(self, n):
+        return self.mvn.rvs(n)
