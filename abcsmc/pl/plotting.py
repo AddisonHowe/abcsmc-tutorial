@@ -413,3 +413,35 @@ def plot_empirical_posterior(particles, weights, **kwargs):
     
     return samps
 
+
+def plot_kernel_comparison_results(
+        acceptance_rate_results, kernel_methods, eps_sched, **kwargs):
+    """Plot results of an acceptance rate analysis between methods.
+    """
+    #~~~~~ Process kwargs ~~~~~#
+    linewidth = kwargs.get('linewidth', 3)
+    title = kwargs.get('title', "Kernel Comparison: Acceptance Rate")
+    xtickfontsize = kwargs.get('xtickfontsize', 8)
+    saveas = kwargs.get('saveas', None)
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~#
+    fig, ax = plt.subplots(1, 1)
+    ns = np.arange(len(eps_sched), dtype=int)
+
+    for km in kernel_methods:
+        acc_rates = acceptance_rate_results[km]
+        ax.errorbar(
+            ns, np.mean(acc_rates, 0), 2*np.std(acc_rates, 0),
+            label=km, 
+            linewidth=linewidth
+        )
+
+    labels=[f'{n}\n({e:.3g})' for n, e in zip(ns, eps_sched)]
+    ax.set_xticks(ns, fontsize=xtickfontsize, labels=labels)
+    
+    ax.legend()
+    ax.set_xlabel("Iteration $n$ ($\epsilon$)")
+    ax.set_ylabel("$\\alpha$")
+    ax.set_title(title)
+
+    if saveas:
+        plt.savefig(saveas)
