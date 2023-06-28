@@ -12,9 +12,6 @@ class Prior(ABC):
     All Priors should have a `rvs` and `pdf` method.
     """
 
-    def __init__(self):
-        super().__init__(self)
-
     @abstractmethod
     def rvs(self, shape=None):
         """Randomly generate an ndarray of the given shape."""

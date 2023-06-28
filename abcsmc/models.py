@@ -47,8 +47,6 @@ class GaussianModel(Model):
         self.sigma = np.sqrt(var)
     
     def generate_data(self, n):
-        if self.ndraws:
-            return self.mu + self.sigma * np.random.randn([n, self.ndraws])
         return self.mu + self.sigma * np.random.randn(n)
     
     def loglikelihood(self, x, theta):

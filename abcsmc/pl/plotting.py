@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
-from .abcsmc import sample_from_priors
+import seaborn as sns
+from abcsmc.abcsmc import sample_from_priors
 
 """
 Plotting Functions
@@ -26,6 +27,8 @@ def plot_results(particle_history, weight_history, score_history,
     true_param = kwargs.get("true_param", None)
     size = kwargs.get('size', 2)
     true_param_size = kwargs.get("true_param_size", 8)
+    cmap_weight = kwargs.get('cmap_weight', 'jet')
+    cmap_score = kwargs.get('cmap_score', 'viridis')
     save = kwargs.get("save", False)
     imgdir = kwargs.get("imgdir", "figures")
     weight_norm = kwargs.get("weight_norm", LogNorm)
@@ -48,25 +51,25 @@ def plot_results(particle_history, weight_history, score_history,
             particles[:,pidx1], particles[:,pidx2],
             s=size, 
             c=weight_history[iteridx],
-            cmap='jet_r',
+            cmap=cmap_weight,
             norm=None if weight_norm is None else weight_norm()
         )
         fig.colorbar(sc, ax=ax1)
         ax1.set_xlabel(pname1)
         ax1.set_ylabel(pname2)
-        ax1.set_title("Posterior vs Prior")
+        ax1.set_title("Particles vs Prior")
 
         sc = ax2.scatter(
             particles[:,pidx1], particles[:,pidx2],
             s=size, 
             c=weight_history[iteridx],
-            cmap='jet_r',
+            cmap=cmap_weight,
             norm=None if weight_norm is None else weight_norm()
         )
         fig.colorbar(sc, ax=ax2)
         ax2.set_xlabel(pname1)
         ax2.set_ylabel(pname2)
-        ax2.set_title("Posterior by weights")
+        ax2.set_title("Particles by weight")
         if true_param is not None:
             s = f"({','.join([pname1, pname2])}) " + \
                 f"$=$ ({true_param[0]:.2g},{true_param[1]:.2g})"
@@ -78,13 +81,13 @@ def plot_results(particle_history, weight_history, score_history,
             particles[:,pidx1], particles[:,pidx2],
             s=size, 
             c=score_history[iteridx],
-            cmap='jet_r',
+            cmap=cmap_score,
             norm=None if score_norm is None else score_norm()
         )
         fig.colorbar(sc, ax=ax3)
         ax3.set_xlabel(pname1)
         ax3.set_ylabel(pname2)
-        ax3.set_title("Posterior by score")
+        ax3.set_title("Particles by score")
         if true_param is not None:
             s = f"({','.join([pname1, pname2])}) " + \
                 f"$=$ ({true_param[0]:.2g},{true_param[1]:.2g})"
@@ -306,3 +309,107 @@ def plot_all_perturbation_sample(
 
     if save:
         plt.savefig(f"{imgdir}/{saveas}")
+
+
+def plot_posterior(model, data, prior_list, **kwargs):
+    """
+    """
+    #~~~~~ Process kwargs ~~~~~#
+    gridn = kwargs.get('gridn', 400)
+    xlims = kwargs.get('xlims', [-20, 20])
+    ylims = kwargs.get('ylims', [-20, 20])
+    cmap = kwargs.get('cmap', 'jet')
+    pname1 = kwargs.get('pname1', "$\\theta_1$")
+    pname2 = kwargs.get('pname2', "$\\theta_2$")
+    markersize = kwargs.get('markersize', 5)
+    markercolor = kwargs.get('markercolor', 'gold')
+    logposterior = kwargs.get('logposterior', True)
+    empirical_dist = kwargs.get('empirical_dist', None)
+    legend_loc = kwargs.get('legend_loc', 'upper right')
+    saveas = kwargs.get("saveas", None)
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~#
+
+    fig, ax = plt.subplots(1, 1)
+    xs = np.linspace(*xlims, gridn)
+    ys = np.linspace(*ylims, gridn)
+    Xs, Ys = np.meshgrid(xs, ys)
+    xys = np.array([Xs, Ys]).reshape([2, -1]).T
+    zs = model.logposterior(
+        xys, data, prior_list
+    ).reshape([gridn, gridn])
+    zs[~np.isfinite(zs)] = -np.nan
+
+    if logposterior:
+        cmap = plt.cm.get_cmap(cmap).reversed()
+        sc = ax.pcolor(xs, ys, -zs, cmap=cmap,
+            norm=LogNorm(vmin=np.nanmin(-zs), vmax=np.nanmax(-zs))
+        )
+        fig.colorbar(sc, ax=ax, label='$-\log$[posterior]')
+    else:
+        sc = ax.pcolor(xs, ys, np.exp(zs), cmap=cmap)
+        fig.colorbar(sc, ax=ax, label='posterior')
+
+    amax = xys[np.nanargmax(zs)]
+    ax.plot(
+        amax[0], amax[1], linestyle='none',
+        marker='o', color=markercolor, markersize=markersize,
+        label= f"Max:\n{pname1}$={amax[0]:.6g}$\n{pname2}$={amax[1]:.6g}$"
+    )
+
+    if empirical_dist is not None:
+        ax.scatter(
+            empirical_dist[:,0], empirical_dist[:,1],
+            c=kwargs.get('col_empirical', 'k'),
+            s=1, alpha=0.5,
+            label="empirical"
+        )
+
+    ax.legend(loc=legend_loc)
+    ax.set_xlabel(pname1)
+    ax.set_ylabel(pname2)
+    ax.set_title(f"Posterior: $P(${pname1}$,${pname2}$|D)$");
+
+    if saveas:
+        plt.savefig(saveas)
+
+
+def plot_empirical_posterior(particles, weights, **kwargs):
+    """Plot an empirical posterior distribution given particles and weights.
+    """
+    #~~~~~ Process kwargs ~~~~~#
+    nsamps = kwargs.get('nsamps', 1000)
+    nlevels = kwargs.get('nlevels', 5)
+    pname1 = kwargs.get('pname1', "$\\theta_1$")
+    pname2 = kwargs.get('pname2', "$\\theta_2$")
+    markersize = kwargs.get('markersize', 2)
+    markercolor = kwargs.get('markercolor', None)
+    saveas = kwargs.get("saveas", None)
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~#
+
+    sampidxs = np.random.choice(len(particles), nsamps, p=weights)
+    samps = particles[sampidxs]
+
+    fig, ax = plt.subplots(1, 1)
+
+    ax.scatter(
+        samps[:,0], samps[:,1],
+        s=markersize, c=markercolor,
+    )
+
+    sns.kdeplot(
+        x=samps[:,0], y=samps[:,1],
+        levels = nlevels,
+        fill=kwargs.get('fill', True),
+        alpha=kwargs.get('alpha', 0.6),
+        ax=ax
+    )
+
+    ax.set_xlabel(pname1)
+    ax.set_ylabel(pname2)
+    ax.set_title("Inferred Posterior Estimate")
+
+    if saveas:
+        plt.savefig(saveas)
+    
+    return samps
+

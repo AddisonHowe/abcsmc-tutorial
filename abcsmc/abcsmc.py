@@ -17,11 +17,15 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
 
     Args:
         nparticles : int : number of parameter particles.
-        nparams : int : number of parameters.
-        prior_list : list[Prior] : priors for each parameter.
+        nparams : int : number of parameters, i.e. dim of a parameter vector.
+        prior_list : list[Prior] : priors for each parameter. Length nparams.
         niters : int : number of iterations.
         sim_func : func : function to simulate.
+            Input is parameter vector of shape (nparams,).
+            Output is data array of arbitrary shape S.
         dist_func : func : function to scores simulation results.
+            Input is data array of shape S, as returned by sim_func.\
+            Output is a real number.
         eps0 : float : starting value of epsilon.
         eps_percentile : float : epsilon reduction percentile.
         min_eps : float : minimum value of epsilon.
@@ -37,6 +41,8 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
     verbosity = kwargs.get('verbosity', 1)
     disable_pbars = kwargs.get('disable_pbars', False)
     #~~~~~~~~~~~~~~~~~~~~~~~~~~#
+
+    assert len(prior_list) == nparams, "Wrong # of priors given."
     
     # Termination Signal Handler
     def terminate_signal(signalnum, handler):
@@ -63,7 +69,6 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
         all_sampling_index_history = [[] for _ in range(niters)]
         all_particle_acceptance_history = [[] for _ in range(niters)]
 
-    
     prev_particles = np.empty([nparticles, nparams])
     prev_scores = np.empty(nparticles)
     prev_particles[:] = np.nan
@@ -117,7 +122,7 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
                         iterpbar.colour = 'green'
                         pbar.close()
                         iterpbar.close()
-                        return prev_particles, prev_scores, results
+                        return prev_particles, weights, results
             
             epsilon_history.append(eps)
 
@@ -125,45 +130,19 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
             if iteridx == 0:
                 pass
             elif kernel_method == 'uniform':
-                dx = 0.5 * (np.max(prev_particles, axis=0) - \
-                            np.min(prev_particles, axis=0))
-                kernel = UniformKernel(nparams, dx=dx)
+                kernel = UniformKernel.construct_from_data(prev_particles)
             elif kernel_method == 'gaussian':
-                good_idxs = prev_scores <= eps
-                good_particles = prev_particles[good_idxs]
-                good_weights = weights[good_idxs]
-                good_weights /= good_weights.sum()
-                sigma = np.zeros(nparams)
-                for pidx in range(nparams):
-                    sigma[pidx] =  np.sum(
-                        weights * np.sum(
-                            good_weights * np.square(
-                                prev_particles[:,pidx][:,None] - \
-                                good_particles[:,pidx][None,:]
-                            ), axis=1
-                        )
-                    )
-                kernel = GaussianKernel(nparams, sigma)
+                kernel = GaussianKernel.construct_from_data(
+                    prev_particles, prev_scores, weights, eps
+                )
             elif kernel_method == 'mvn':
-                good_idxs = prev_scores <= eps
-                good_particles = prev_particles[good_idxs]
-                good_weights = weights[good_idxs]
-                good_weights /= good_weights.sum()
-                z = good_particles[None,:] - prev_particles[:,None]
-                t0 = z[:,:,:,None] @ z[:,:,None,:]  
-                t1 = np.sum(good_weights[None,:,None,None] * t0, axis=1)
-                cov =  np.sum(weights[:,None,None] * t1, axis=0)
-                kernel = MVNKernel(nparams, cov)
+                kernel = MVNKernel.construct_from_data(
+                    prev_particles, prev_scores, weights, eps
+                )
             elif kernel_method == 'locm':
-                good_idxs = prev_scores <= eps
-                good_particles = prev_particles[good_idxs]
-                good_weights = weights[good_idxs]
-                good_weights /= good_weights.sum()
-                z = good_particles[None,:] - prev_particles[:,None]
-                mus = prev_particles.copy()
-                covs = np.sum((z[:,:,:,None] @ z[:,:,None,:]) * \
-                              good_weights[None,:,None,None], axis=1)
-                kernel = LOCMKernel(nparams, mus, covs)
+                kernel = LOCMKernel.construct_from_data(
+                    prev_particles, prev_scores, weights, eps
+                )
             else:
                 raise RuntimeError(f"Unknown kernel method `{kernel_method}`")
             
@@ -196,15 +175,21 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
                         particle, idx = sample_from_distribution(
                             prev_particles, weights
                         )
+                        assert particle.shape == (nparams,), \
+                            "Wrong shape for sampled particle before perturb."
                         # Perturb sampled particles
-                        particle = kernel.perturb(particle, idx)
+                        particle = kernel.perturb(particle, idx=idx)
+                        assert particle.shape == (nparams,), \
+                            "Wrong shape for sampled particle after perturb."
                         prob_particle = eval_prior_prob(particle, prior_list)
                         if prob_particle > 0:
                             found = True
+                
                 # Simulate
                 data = sim_func(particle)
                 # Score to find distance
                 score = dist_func(data)
+
                 # Accept or reject the particle
                 if score <= eps:
                     kept_particles[count] = particle
@@ -286,7 +271,7 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
         # Return results of last completed iteration
         results = compile_results(iteridx=iteridx)
         if iteridx > 0:            
-            return prev_particles, prev_scores, results
+            return prev_particles, weights, results
         else:
             return None, None, None
         
@@ -295,7 +280,7 @@ def abcsmc(nparticles, nparams, prior_list, niters, sim_func, dist_func,
 ########################################################################
 
 def eval_prior_prob(particle, prior_list):
-    return np.prod([p.pdf(particle) for p in prior_list])
+    return np.prod([p.pdf(particle[i]) for i, p in enumerate(prior_list)])
 
 def sample_from_priors(prior_list, n=None):
     if n:
@@ -312,8 +297,9 @@ def compute_weights(particles, sampling_idxs, prev_particles, prev_weights,
     for i in range(len(particles)):
         denom = np.sum(
             prev_weights * kernel.vpdf(
-                prev_particles, particles[i], sampling_idxs[i]
-            )
+                particles[i][None,:], prev_particles, 
+                idx=np.arange(len(prev_particles))
+            ).flatten()
         )
         new_weights[i] = eval_prior_prob(particles[i], prior_list) / denom
     return new_weights / new_weights.sum()
