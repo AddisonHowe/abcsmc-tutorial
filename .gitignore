@@ -1,4 +1,6 @@
 out/
+jobs/
+logs/
 scripts/
 Makefile
 
