@@ -1,4 +1,6 @@
 out/
+scripts/
+Makefile
 
 **/.DS_Store
 

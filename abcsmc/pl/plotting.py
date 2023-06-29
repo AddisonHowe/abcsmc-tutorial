@@ -33,6 +33,7 @@ def plot_results(particle_history, weight_history, score_history,
     imgdir = kwargs.get("imgdir", "figures")
     weight_norm = kwargs.get("weight_norm", LogNorm)
     score_norm = kwargs.get('score_norm', None)
+    show = kwargs.get('show', True)
     #~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
     empirical_prior = sample_from_priors(prior_list, 1000)
@@ -99,6 +100,8 @@ def plot_results(particle_history, weight_history, score_history,
 
         if save:
             plt.savefig(f"{imgdir}/posterior_{iteridx}.png")
+        if not show:
+            plt.close()
 
     ns = range(len(epsilon_history))
     
@@ -110,6 +113,8 @@ def plot_results(particle_history, weight_history, score_history,
     ax.set_title("$\epsilon$ schedule")
     if save:
         plt.savefig(f"{imgdir}/epsilon_sched.png")
+    if not show:
+        plt.close()
 
     fig, ax = plt.subplots(1, 1, figsize=(6,4))
     ax.plot(ns, acceptance_rates, '.-', linewidth=3, markersize=12)
@@ -119,6 +124,8 @@ def plot_results(particle_history, weight_history, score_history,
     ax.set_title("Acceptance rate")
     if save:
         plt.savefig(f"{imgdir}/acceptance_rate.png")
+    if not show:
+        plt.close()
 
 
 def plot_perturbation_sample(iteridx0, particle_history, sampling_idx_history, 
@@ -142,6 +149,7 @@ def plot_perturbation_sample(iteridx0, particle_history, sampling_idx_history,
     pname2 = kwargs.get("pname2", "$\\theta_2$")
     plot_background = kwargs.get('plot_background', True)
     background_alpha = kwargs.get('background_alpha', 0.2)
+    show = kwargs.get('show', True)
     #~~~~~~~~~~~~~~~~~~~~~~~~~~#
     
     assert iteridx0 < len(particle_history) - 1, \
@@ -205,6 +213,8 @@ def plot_perturbation_sample(iteridx0, particle_history, sampling_idx_history,
 
     if save:
         plt.savefig(f"{imgdir}/{saveas}")
+    if not show:
+        plt.close()
 
 
 def plot_all_perturbation_sample(
@@ -230,6 +240,7 @@ def plot_all_perturbation_sample(
     plot_background = kwargs.get('plot_background', True)
     background_alpha = kwargs.get('background_alpha', 0.2)
     acceptance_history = kwargs.get('acceptance_history', None)
+    show = kwargs.get('show', True)
     #~~~~~~~~~~~~~~~~~~~~~~~~~~#
     
     assert iteridx0 < len(particle_history) - 1, \
@@ -309,6 +320,8 @@ def plot_all_perturbation_sample(
 
     if save:
         plt.savefig(f"{imgdir}/{saveas}")
+    if not show:
+        plt.close()
 
 
 def plot_posterior(model, data, prior_list, **kwargs):
@@ -326,7 +339,9 @@ def plot_posterior(model, data, prior_list, **kwargs):
     logposterior = kwargs.get('logposterior', True)
     empirical_dist = kwargs.get('empirical_dist', None)
     legend_loc = kwargs.get('legend_loc', 'upper right')
+    plot_max_posterior = kwargs.get('plot_max_posterior', True)
     saveas = kwargs.get("saveas", None)
+    show = kwargs.get('show', True)
     #~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
     fig, ax = plt.subplots(1, 1)
@@ -350,11 +365,12 @@ def plot_posterior(model, data, prior_list, **kwargs):
         fig.colorbar(sc, ax=ax, label='posterior')
 
     amax = xys[np.nanargmax(zs)]
-    ax.plot(
-        amax[0], amax[1], linestyle='none',
-        marker='o', color=markercolor, markersize=markersize,
-        label= f"Max:\n{pname1}$={amax[0]:.6g}$\n{pname2}$={amax[1]:.6g}$"
-    )
+    if plot_max_posterior:
+        ax.plot(
+            amax[0], amax[1], linestyle='none',
+            marker='o', color=markercolor, markersize=markersize,
+            label= f"max analytic:\n{pname1}$={amax[0]:.6g}$\n{pname2}$={amax[1]:.6g}$"
+        )
 
     if empirical_dist is not None:
         ax.scatter(
@@ -371,6 +387,8 @@ def plot_posterior(model, data, prior_list, **kwargs):
 
     if saveas:
         plt.savefig(saveas)
+    if not show:
+        plt.close()
 
 
 def plot_empirical_posterior(particles, weights, **kwargs):
@@ -384,6 +402,7 @@ def plot_empirical_posterior(particles, weights, **kwargs):
     markersize = kwargs.get('markersize', 2)
     markercolor = kwargs.get('markercolor', None)
     saveas = kwargs.get("saveas", None)
+    show = kwargs.get('show', True)
     #~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
     sampidxs = np.random.choice(len(particles), nsamps, p=weights)
@@ -410,6 +429,8 @@ def plot_empirical_posterior(particles, weights, **kwargs):
 
     if saveas:
         plt.savefig(saveas)
+    if not show:
+        plt.close()
     
     return samps
 
@@ -423,6 +444,7 @@ def plot_kernel_comparison_results(
     title = kwargs.get('title', "Kernel Comparison: Acceptance Rate")
     xtickfontsize = kwargs.get('xtickfontsize', 8)
     saveas = kwargs.get('saveas', None)
+    show = kwargs.get('show', True)
     #~~~~~~~~~~~~~~~~~~~~~~~~~~#
     fig, ax = plt.subplots(1, 1)
     ns = np.arange(len(eps_sched), dtype=int)
@@ -445,3 +467,5 @@ def plot_kernel_comparison_results(
 
     if saveas:
         plt.savefig(saveas)
+    if not show:
+        plt.close()
